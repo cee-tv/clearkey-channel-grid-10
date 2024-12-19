@@ -15,7 +15,6 @@ interface PlayerCoreProps {
 const PlayerCore = ({ manifestUrl, drmKey, videoRef }: PlayerCoreProps) => {
   const playerRef = useRef<any>(null);
   const hlsRef = useRef<Hls | null>(null);
-  const abortControllerRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
     const initPlayer = async () => {
@@ -23,9 +22,6 @@ const PlayerCore = ({ manifestUrl, drmKey, videoRef }: PlayerCoreProps) => {
 
       try {
         // Clean up previous instances before initializing new ones
-        if (abortControllerRef.current) {
-          abortControllerRef.current.abort();
-        }
         if (playerRef.current) {
           await playerRef.current.destroy();
           playerRef.current = null;
@@ -34,9 +30,6 @@ const PlayerCore = ({ manifestUrl, drmKey, videoRef }: PlayerCoreProps) => {
           hlsRef.current.destroy();
           hlsRef.current = null;
         }
-
-        // Create new abort controller
-        abortControllerRef.current = new AbortController();
 
         if (manifestUrl.includes('.m3u8')) {
           if (Hls.isSupported()) {
@@ -133,12 +126,12 @@ const PlayerCore = ({ manifestUrl, drmKey, videoRef }: PlayerCoreProps) => {
           }
 
           try {
-            await player.load(manifestUrl, undefined, undefined, abortControllerRef.current.signal);
+            await player.load(manifestUrl);
             await videoRef.current.play();
           } catch (error) {
             console.error('Error loading or playing DASH content:', error);
             // Attempt to recover from error
-            if (player && !abortControllerRef.current.signal.aborted) {
+            if (player) {
               player.retryStreaming();
             }
           }
@@ -153,9 +146,6 @@ const PlayerCore = ({ manifestUrl, drmKey, videoRef }: PlayerCoreProps) => {
     return () => {
       // Cleanup function
       const cleanup = async () => {
-        if (abortControllerRef.current) {
-          abortControllerRef.current.abort();
-        }
         if (playerRef.current) {
           try {
             await playerRef.current.destroy();
