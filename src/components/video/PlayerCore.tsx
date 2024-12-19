@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import Hls from 'hls.js';
-import shaka from 'shaka-player';
+// Fix the import by using require syntax for Shaka Player
+const shaka = require('shaka-player');
 
 interface PlayerCoreProps {
   manifestUrl: string;
@@ -12,7 +13,7 @@ interface PlayerCoreProps {
 }
 
 const PlayerCore = ({ manifestUrl, drmKey, videoRef }: PlayerCoreProps) => {
-  const playerRef = useRef<shaka.Player | null>(null);
+  const playerRef = useRef<any>(null);
   const hlsRef = useRef<Hls | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
 
@@ -20,39 +21,39 @@ const PlayerCore = ({ manifestUrl, drmKey, videoRef }: PlayerCoreProps) => {
     const initPlayer = async () => {
       if (!videoRef.current) return;
 
-      // Cleanup previous instances
-      if (abortControllerRef.current) {
-        abortControllerRef.current.abort();
-      }
-      if (playerRef.current) {
-        await playerRef.current.destroy();
-        playerRef.current = null;
-      }
-      if (hlsRef.current) {
-        hlsRef.current.destroy();
-        hlsRef.current = null;
-      }
-
-      // Create new abort controller
-      abortControllerRef.current = new AbortController();
-
       try {
+        // Clean up previous instances before initializing new ones
+        if (abortControllerRef.current) {
+          abortControllerRef.current.abort();
+        }
+        if (playerRef.current) {
+          await playerRef.current.destroy();
+          playerRef.current = null;
+        }
+        if (hlsRef.current) {
+          hlsRef.current.destroy();
+          hlsRef.current = null;
+        }
+
+        // Create new abort controller
+        abortControllerRef.current = new AbortController();
+
         if (manifestUrl.includes('.m3u8')) {
           // HLS Setup
           if (Hls.isSupported()) {
             const hls = new Hls({
               enableWorker: true,
               lowLatencyMode: true,
-              backBufferLength: 30,
-              maxBufferSize: 30 * 1000 * 1000,
+              backBufferLength: 90,
+              maxBufferSize: 0,
               maxBufferLength: 30,
               startLevel: -1,
-              manifestLoadingTimeOut: 10000,
-              manifestLoadingMaxRetry: 3,
-              levelLoadingTimeOut: 10000,
-              levelLoadingMaxRetry: 3,
-              fragLoadingTimeOut: 10000,
-              fragLoadingMaxRetry: 3
+              manifestLoadingTimeOut: 20000,
+              manifestLoadingMaxRetry: 5,
+              levelLoadingTimeOut: 20000,
+              levelLoadingMaxRetry: 5,
+              fragLoadingTimeOut: 20000,
+              fragLoadingMaxRetry: 5
             });
 
             hlsRef.current = hls;
@@ -63,6 +64,24 @@ const PlayerCore = ({ manifestUrl, drmKey, videoRef }: PlayerCoreProps) => {
               videoRef.current?.play().catch(error => {
                 console.error('HLS autoplay failed:', error);
               });
+            });
+
+            // Add error handling for HLS
+            hls.on(Hls.Events.ERROR, (event, data) => {
+              if (data.fatal) {
+                console.error('Fatal HLS error:', data);
+                switch (data.type) {
+                  case Hls.ErrorTypes.NETWORK_ERROR:
+                    hls.startLoad();
+                    break;
+                  case Hls.ErrorTypes.MEDIA_ERROR:
+                    hls.recoverMediaError();
+                    break;
+                  default:
+                    hls.destroy();
+                    break;
+                }
+              }
             });
           } else if (videoRef.current.canPlayType('application/vnd.apple.mpegurl')) {
             videoRef.current.src = manifestUrl;
@@ -82,16 +101,24 @@ const PlayerCore = ({ manifestUrl, drmKey, videoRef }: PlayerCoreProps) => {
           await player.attach(videoRef.current);
           playerRef.current = player;
 
+          // Configure player with more resilient settings
           player.configure({
             streaming: {
-              bufferingGoal: 30,
+              bufferingGoal: 60,
               rebufferingGoal: 2,
-              bufferBehind: 30,
+              bufferBehind: 90,
               retryParameters: {
-                maxAttempts: 3,
+                maxAttempts: 5,
                 baseDelay: 1000,
                 backoffFactor: 2,
-                timeout: 10000
+                timeout: 20000
+              },
+              failureCallback: (error) => {
+                console.error('Shaka player error:', error);
+                // Attempt to recover from error
+                if (player) {
+                  player.retryStreaming();
+                }
               }
             }
           });
@@ -106,10 +133,16 @@ const PlayerCore = ({ manifestUrl, drmKey, videoRef }: PlayerCoreProps) => {
             });
           }
 
-          await player.load(manifestUrl, undefined, undefined, abortControllerRef.current.signal);
-          videoRef.current.play().catch(error => {
-            console.error('DASH autoplay failed:', error);
-          });
+          try {
+            await player.load(manifestUrl, undefined, undefined, abortControllerRef.current.signal);
+            await videoRef.current.play();
+          } catch (error) {
+            console.error('Error loading or playing DASH content:', error);
+            // Attempt to recover from error
+            if (player && !abortControllerRef.current.signal.aborted) {
+              player.retryStreaming();
+            }
+          }
         }
       } catch (error) {
         console.error('Error initializing player:', error);
@@ -119,16 +152,25 @@ const PlayerCore = ({ manifestUrl, drmKey, videoRef }: PlayerCoreProps) => {
     initPlayer();
 
     return () => {
-      // Cleanup on unmount or when manifestUrl changes
-      if (abortControllerRef.current) {
-        abortControllerRef.current.abort();
-      }
-      if (playerRef.current) {
-        playerRef.current.destroy();
-      }
-      if (hlsRef.current) {
-        hlsRef.current.destroy();
-      }
+      // Cleanup function
+      const cleanup = async () => {
+        if (abortControllerRef.current) {
+          abortControllerRef.current.abort();
+        }
+        if (playerRef.current) {
+          try {
+            await playerRef.current.destroy();
+            playerRef.current = null;
+          } catch (error) {
+            console.error('Error destroying Shaka player:', error);
+          }
+        }
+        if (hlsRef.current) {
+          hlsRef.current.destroy();
+          hlsRef.current = null;
+        }
+      };
+      cleanup();
     };
   }, [manifestUrl, drmKey, videoRef]);
 
