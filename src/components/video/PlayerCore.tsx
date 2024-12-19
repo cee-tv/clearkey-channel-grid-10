@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import Hls from 'hls.js';
-import * as shaka from 'shaka-player';
+// @ts-ignore
+import shaka from 'shaka-player';
 
 interface PlayerCoreProps {
   manifestUrl: string;
