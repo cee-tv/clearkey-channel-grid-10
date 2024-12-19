@@ -14,6 +14,14 @@ const VideoPlayer = ({ manifestUrl, channelTitle, drmKey, onClose, onPrevChannel
   const [showControls, setShowControls] = useState(true);
   const [isBuffering, setIsBuffering] = useState(true);
 
+  // Add effect to handle channel changes
+  useEffect(() => {
+    if (videoRef.current) {
+      videoRef.current.play()
+        .catch(error => console.error('Autoplay failed:', error));
+    }
+  }, [manifestUrl]); // This will trigger whenever the channel changes
+
   const toggleFullscreen = () => {
     if (!containerRef.current) return;
     
@@ -96,6 +104,20 @@ const VideoPlayer = ({ manifestUrl, channelTitle, drmKey, onClose, onPrevChannel
     };
   }, []);
 
+  const handlePrevChannel = () => {
+    if (onPrevChannel) {
+      onPrevChannel();
+      setIsPlaying(true);
+    }
+  };
+
+  const handleNextChannel = () => {
+    if (onNextChannel) {
+      onNextChannel();
+      setIsPlaying(true);
+    }
+  };
+
   return (
     <div 
       ref={containerRef} 
@@ -133,8 +155,8 @@ const VideoPlayer = ({ manifestUrl, channelTitle, drmKey, onClose, onPrevChannel
         onVolumeChange={handleVolumeChange}
         onMuteToggle={toggleMute}
         onClose={onClose}
-        onPrevChannel={onPrevChannel}
-        onNextChannel={onNextChannel}
+        onPrevChannel={handlePrevChannel}
+        onNextChannel={handleNextChannel}
       />
     </div>
   );
