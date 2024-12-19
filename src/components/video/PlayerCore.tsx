@@ -17,19 +17,31 @@ const PlayerCore = ({ manifestUrl, drmKey, videoRef }: PlayerCoreProps) => {
   const hlsRef = useRef<Hls | null>(null);
 
   useEffect(() => {
+    let mounted = true;
+
     const initPlayer = async () => {
-      if (!videoRef.current) return;
+      if (!videoRef.current || !mounted) return;
 
       try {
         // Clean up previous instances before initializing new ones
         if (playerRef.current) {
-          await playerRef.current.destroy();
+          try {
+            await playerRef.current.destroy();
+          } catch (error) {
+            console.error('Error destroying previous player:', error);
+          }
           playerRef.current = null;
         }
+
         if (hlsRef.current) {
           hlsRef.current.destroy();
           hlsRef.current = null;
         }
+
+        // Small delay to ensure proper cleanup
+        await new Promise(resolve => setTimeout(resolve, 100));
+
+        if (!mounted) return;
 
         if (manifestUrl.includes('.m3u8')) {
           if (Hls.isSupported()) {
@@ -53,12 +65,13 @@ const PlayerCore = ({ manifestUrl, drmKey, videoRef }: PlayerCoreProps) => {
             hls.attachMedia(videoRef.current);
 
             hls.on(Hls.Events.MANIFEST_PARSED, () => {
-              videoRef.current?.play().catch(error => {
-                console.error('HLS autoplay failed:', error);
-              });
+              if (mounted && videoRef.current) {
+                videoRef.current.play().catch(error => {
+                  console.error('HLS autoplay failed:', error);
+                });
+              }
             });
 
-            // Add error handling for HLS
             hls.on(Hls.Events.ERROR, (event, data) => {
               if (data.fatal) {
                 console.error('Fatal HLS error:', data);
@@ -90,15 +103,13 @@ const PlayerCore = ({ manifestUrl, drmKey, videoRef }: PlayerCoreProps) => {
           }
 
           const player = new shaka.Player();
-          await player.attach(videoRef.current);
-          playerRef.current = player;
-
+          
           // Configure player with more resilient settings
           player.configure({
             streaming: {
-              bufferingGoal: 60,
+              bufferingGoal: 30,
               rebufferingGoal: 2,
-              bufferBehind: 90,
+              bufferBehind: 30,
               retryParameters: {
                 maxAttempts: 5,
                 baseDelay: 1000,
@@ -107,31 +118,37 @@ const PlayerCore = ({ manifestUrl, drmKey, videoRef }: PlayerCoreProps) => {
               },
               failureCallback: (error) => {
                 console.error('Shaka player error:', error);
-                // Attempt to recover from error
-                if (player) {
+                if (player && mounted) {
                   player.retryStreaming();
                 }
               }
             }
           });
 
-          if (drmKey) {
-            player.configure({
-              drm: {
-                clearKeys: {
-                  [drmKey.keyId]: drmKey.key
-                }
-              }
-            });
-          }
+          if (!mounted) return;
 
           try {
+            await player.attach(videoRef.current);
+            playerRef.current = player;
+
+            if (drmKey) {
+              player.configure({
+                drm: {
+                  clearKeys: {
+                    [drmKey.keyId]: drmKey.key
+                  }
+                }
+              });
+            }
+
             await player.load(manifestUrl);
-            await videoRef.current.play();
+            
+            if (mounted && videoRef.current) {
+              await videoRef.current.play();
+            }
           } catch (error) {
             console.error('Error loading or playing DASH content:', error);
-            // Attempt to recover from error
-            if (player) {
+            if (mounted && player) {
               player.retryStreaming();
             }
           }
@@ -144,7 +161,7 @@ const PlayerCore = ({ manifestUrl, drmKey, videoRef }: PlayerCoreProps) => {
     initPlayer();
 
     return () => {
-      // Cleanup function
+      mounted = false;
       const cleanup = async () => {
         if (playerRef.current) {
           try {
