@@ -16,19 +16,34 @@ const VideoPlayer = ({ manifestUrl, channelTitle, drmKey, onClose, onPrevChannel
 
   // Effect to handle channel changes and ensure autoplay
   useEffect(() => {
+    let mounted = true;
+    
     const playVideo = async () => {
-      if (videoRef.current) {
-        try {
-          await videoRef.current.play();
-          setIsPlaying(true);
-        } catch (error) {
-          console.error('Autoplay failed:', error);
+      if (!videoRef.current || !mounted) return;
+      
+      try {
+        setIsBuffering(true);
+        // Small delay to allow the video to load
+        await new Promise(resolve => setTimeout(resolve, 500));
+        await videoRef.current.play();
+        setIsPlaying(true);
+      } catch (error) {
+        console.error('Autoplay failed:', error);
+        if (mounted) {
           setIsPlaying(false);
+        }
+      } finally {
+        if (mounted) {
+          setIsBuffering(false);
         }
       }
     };
 
     playVideo();
+
+    return () => {
+      mounted = false;
+    };
   }, [manifestUrl]); // This will trigger whenever the channel changes
 
   const toggleFullscreen = () => {
@@ -43,18 +58,19 @@ const VideoPlayer = ({ manifestUrl, channelTitle, drmKey, onClose, onPrevChannel
     }
   };
 
-  const togglePlay = () => {
+  const togglePlay = async () => {
     if (!videoRef.current) return;
     
-    if (videoRef.current.paused) {
-      videoRef.current.play()
-        .then(() => setIsPlaying(true))
-        .catch(error => {
-          console.error('Play failed:', error);
-          setIsPlaying(false);
-        });
-    } else {
-      videoRef.current.pause();
+    try {
+      if (videoRef.current.paused) {
+        await videoRef.current.play();
+        setIsPlaying(true);
+      } else {
+        videoRef.current.pause();
+        setIsPlaying(false);
+      }
+    } catch (error) {
+      console.error('Play/Pause failed:', error);
       setIsPlaying(false);
     }
   };
@@ -100,7 +116,9 @@ const VideoPlayer = ({ manifestUrl, channelTitle, drmKey, onClose, onPrevChannel
       video.addEventListener('playing', () => setIsBuffering(false));
       video.addEventListener('canplay', () => {
         setIsBuffering(false);
-        video.play();
+        video.play().catch(error => {
+          console.error('Canplay autoplay failed:', error);
+        });
       });
     }
 
@@ -120,16 +138,16 @@ const VideoPlayer = ({ manifestUrl, channelTitle, drmKey, onClose, onPrevChannel
   const handlePrevChannel = () => {
     if (onPrevChannel) {
       setIsBuffering(true);
-      onPrevChannel();
       setIsPlaying(true);
+      onPrevChannel();
     }
   };
 
   const handleNextChannel = () => {
     if (onNextChannel) {
       setIsBuffering(true);
-      onNextChannel();
       setIsPlaying(true);
+      onNextChannel();
     }
   };
 
