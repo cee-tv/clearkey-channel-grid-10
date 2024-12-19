@@ -1,7 +1,6 @@
 import { useEffect, useRef } from 'react';
 import Hls from 'hls.js';
-// Fix the import by using require syntax for Shaka Player
-const shaka = require('shaka-player');
+import * as shaka from 'shaka-player';
 
 interface PlayerCoreProps {
   manifestUrl: string;
@@ -39,7 +38,6 @@ const PlayerCore = ({ manifestUrl, drmKey, videoRef }: PlayerCoreProps) => {
         abortControllerRef.current = new AbortController();
 
         if (manifestUrl.includes('.m3u8')) {
-          // HLS Setup
           if (Hls.isSupported()) {
             const hls = new Hls({
               enableWorker: true,
