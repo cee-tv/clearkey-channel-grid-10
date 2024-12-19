@@ -14,12 +14,21 @@ const VideoPlayer = ({ manifestUrl, channelTitle, drmKey, onClose, onPrevChannel
   const [showControls, setShowControls] = useState(true);
   const [isBuffering, setIsBuffering] = useState(true);
 
-  // Add effect to handle channel changes
+  // Effect to handle channel changes and ensure autoplay
   useEffect(() => {
-    if (videoRef.current) {
-      videoRef.current.play()
-        .catch(error => console.error('Autoplay failed:', error));
-    }
+    const playVideo = async () => {
+      if (videoRef.current) {
+        try {
+          await videoRef.current.play();
+          setIsPlaying(true);
+        } catch (error) {
+          console.error('Autoplay failed:', error);
+          setIsPlaying(false);
+        }
+      }
+    };
+
+    playVideo();
   }, [manifestUrl]); // This will trigger whenever the channel changes
 
   const toggleFullscreen = () => {
@@ -38,8 +47,12 @@ const VideoPlayer = ({ manifestUrl, channelTitle, drmKey, onClose, onPrevChannel
     if (!videoRef.current) return;
     
     if (videoRef.current.paused) {
-      videoRef.current.play();
-      setIsPlaying(true);
+      videoRef.current.play()
+        .then(() => setIsPlaying(true))
+        .catch(error => {
+          console.error('Play failed:', error);
+          setIsPlaying(false);
+        });
     } else {
       videoRef.current.pause();
       setIsPlaying(false);
@@ -106,6 +119,7 @@ const VideoPlayer = ({ manifestUrl, channelTitle, drmKey, onClose, onPrevChannel
 
   const handlePrevChannel = () => {
     if (onPrevChannel) {
+      setIsBuffering(true);
       onPrevChannel();
       setIsPlaying(true);
     }
@@ -113,6 +127,7 @@ const VideoPlayer = ({ manifestUrl, channelTitle, drmKey, onClose, onPrevChannel
 
   const handleNextChannel = () => {
     if (onNextChannel) {
+      setIsBuffering(true);
       onNextChannel();
       setIsPlaying(true);
     }
